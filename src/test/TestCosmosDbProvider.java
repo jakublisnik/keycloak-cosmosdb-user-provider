@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class TestCosmosDbProvider {
 
     public static void main(String[] args) {
-        // Testovací konfigurace
+        // Test configuration
         String endpoint = "databse_url";
         String key = "private_key";
         String databaseName = "db_name";
@@ -23,9 +23,9 @@ public class TestCosmosDbProvider {
         CosmosClient cosmosClient = null;
 
         try {
-            System.out.println("=== Test připojení k Cosmos DB ===");
+            System.out.println("=== Cosmos DB Connection Test ===");
 
-            // Připojení
+            // Connect
             cosmosClient = new CosmosClientBuilder()
                     .endpoint(endpoint)
                     .key(key)
@@ -35,25 +35,25 @@ public class TestCosmosDbProvider {
             CosmosDatabase database = cosmosClient.getDatabase(databaseName);
             CosmosContainer container = database.getContainer(containerName);
 
-            System.out.println("✅ Připojení úspěšné!");
+            System.out.println("✅ Connection successful!");
 
-            // Test 1: Počet dokumentů
+            // Test 1: Document count
             testDocumentCount(container);
 
-            // Test 2: Hledání uživatele podle UserAdId
+            // Test 2: Find user by UserAdId
             testFindUserByUsername(container, "girmalar");
 
-            // Test 3: Hledání uživatele podle emailu
+            // Test 3: Find user by email
             testFindUserByEmail(container, "testgoogle@google.com");
 
-            // Test 4: Seznam všech aktivních uživatelů
+            // Test 4: List all active users
             testListActiveUsers(container);
 
-            // Test 5: Validace hesla
+            // Test 5: Password validation
             testPasswordValidation(container, "girmalar", "bgggggggg1!");
 
         } catch (Exception e) {
-            System.err.println("❌ Chyba: " + e.getMessage());
+            System.err.println("❌ Error: " + e.getMessage());
             e.printStackTrace();
         } finally {
             if (cosmosClient != null) {
@@ -64,7 +64,7 @@ public class TestCosmosDbProvider {
 
     private static void testDocumentCount(CosmosContainer container) {
         try {
-            System.out.println("\n=== Test: Počet dokumentů ===");
+            System.out.println("\n=== Test: Document Count ===");
             String query = "SELECT VALUE COUNT(1) FROM c";
             CosmosPagedIterable<Integer> queryResponse = container.queryItems(
                     query,
@@ -73,10 +73,10 @@ public class TestCosmosDbProvider {
             );
 
             for (Integer count : queryResponse) {
-                System.out.println("Celkem dokumentů: " + count);
+                System.out.println("Total documents: " + count);
             }
 
-            // Počet aktivních uživatelů
+            // Count of active users
             String activeQuery = "SELECT VALUE COUNT(1) FROM c WHERE c.Item.Active = 1";
             CosmosPagedIterable<Integer> activeResponse = container.queryItems(
                     activeQuery,
@@ -85,17 +85,17 @@ public class TestCosmosDbProvider {
             );
 
             for (Integer count : activeResponse) {
-                System.out.println("Aktivní uživatelé: " + count);
+                System.out.println("Active users: " + count);
             }
 
         } catch (Exception e) {
-            System.err.println("❌ Chyba při počítání dokumentů: " + e.getMessage());
+            System.err.println("❌ Error counting documents: " + e.getMessage());
         }
     }
 
     private static void testFindUserByUsername(CosmosContainer container, String username) {
         try {
-            System.out.println("\n=== Test: Hledání uživatele podle UserAdId ===");
+            System.out.println("\n=== Test: Find user by UserAdId ===");
             String query = "SELECT * FROM c WHERE c.Header.UserAdId = '" + username + "'";
 
             CosmosPagedIterable<JsonNode> queryResponse = container.queryItems(
@@ -108,22 +108,22 @@ public class TestCosmosDbProvider {
             boolean found = false;
             for (JsonNode userDoc : queryResponse) {
                 found = true;
-                System.out.println("✅ Uživatel nalezen: " + username);
+                System.out.println("✅ User found: " + username);
                 printUserInfo(userDoc);
             }
 
             if (!found) {
-                System.out.println("❌ Uživatel nenalezen: " + username);
+                System.out.println("❌ User not found: " + username);
             }
 
         } catch (Exception e) {
-            System.err.println("❌ Chyba při hledání uživatele: " + e.getMessage());
+            System.err.println("❌ Error finding user: " + e.getMessage());
         }
     }
 
     private static void testFindUserByEmail(CosmosContainer container, String email) {
         try {
-            System.out.println("\n=== Test: Hledání uživatele podle emailu ===");
+            System.out.println("\n=== Test: Find user by email ===");
             String query = "SELECT * FROM c WHERE c.Item.Email = '" + email + "'";
 
             CosmosPagedIterable<JsonNode> queryResponse = container.queryItems(
@@ -135,22 +135,22 @@ public class TestCosmosDbProvider {
             boolean found = false;
             for (JsonNode userDoc : queryResponse) {
                 found = true;
-                System.out.println("✅ Uživatel nalezen podle emailu: " + email);
+                System.out.println("✅ User found by email: " + email);
                 printUserInfo(userDoc);
             }
 
             if (!found) {
-                System.out.println("ℹ️ Uživatel nenalezen podle emailu: " + email);
+                System.out.println("ℹ️ User not found by email: " + email);
             }
 
         } catch (Exception e) {
-            System.err.println("❌ Chyba při hledání podle emailu: " + e.getMessage());
+            System.err.println("❌ Error finding by email: " + e.getMessage());
         }
     }
 
     private static void testListActiveUsers(CosmosContainer container) {
         try {
-            System.out.println("\n=== Test: Seznam aktivních uživatelů ===");
+            System.out.println("\n=== Test: List active users ===");
             String query = "SELECT * FROM c WHERE c.Item.Active = 1";
 
             CosmosPagedIterable<JsonNode> queryResponse = container.queryItems(
@@ -162,21 +162,21 @@ public class TestCosmosDbProvider {
             int count = 0;
             for (JsonNode userDoc : queryResponse) {
                 count++;
-                System.out.println("Uživatel #" + count + ":");
+                System.out.println("User #" + count + ":");
                 printUserInfo(userDoc);
                 System.out.println("---");
             }
 
-            System.out.println("Celkem aktivních uživatelů: " + count);
+            System.out.println("Total active users: " + count);
 
         } catch (Exception e) {
-            System.err.println("❌ Chyba při výpisu uživatelů: " + e.getMessage());
+            System.err.println("❌ Error listing users: " + e.getMessage());
         }
     }
 
     private static void testPasswordValidation(CosmosContainer container, String username, String password) {
         try {
-            System.out.println("\n=== Test: Validace hesla ===");
+            System.out.println("\n=== Test: Password validation ===");
             String query = "SELECT * FROM c WHERE c.Header.UserAdId = '" + username + "'";
 
             CosmosPagedIterable<JsonNode> queryResponse = container.queryItems(
@@ -191,18 +191,18 @@ public class TestCosmosDbProvider {
                     String storedPassword = item.get("Password").asText();
                     boolean isValid = password.equals(storedPassword);
 
-                    System.out.println("Uživatel: " + username);
-                    System.out.println("Zadané heslo: " + password);
-                    System.out.println("Uložené heslo: " + storedPassword);
-                    System.out.println("Validace: " + (isValid ? "✅ ÚSPĚCH" : "❌ NEPLATNÉ"));
+                    System.out.println("User: " + username);
+                    System.out.println("Entered password: " + password);
+                    System.out.println("Stored password: " + storedPassword);
+                    System.out.println("Validation: " + (isValid ? "✅ SUCCESS" : "❌ INVALID"));
                     return;
                 }
             }
 
-            System.out.println("❌ Uživatel nenalezen pro validaci hesla: " + username);
+            System.out.println("❌ User not found for password validation: " + username);
 
         } catch (Exception e) {
-            System.err.println("❌ Chyba při validaci hesla: " + e.getMessage());
+            System.err.println("❌ Error validating password: " + e.getMessage());
         }
     }
 
@@ -217,19 +217,19 @@ public class TestCosmosDbProvider {
             }
 
             if (item != null) {
-                System.out.println("  Jméno: " + item.get("Name").asText());
-                System.out.println("  Příjmení: " + item.get("Surename").asText());
+                System.out.println("  First name: " + item.get("Name").asText());
+                System.out.println("  Last name: " + item.get("Surename").asText());
                 System.out.println("  Email: " + item.get("Email").asText());
                 System.out.println("  Role: " + item.get("Role").asText());
-                System.out.println("  Aktivní: " + (item.get("Active").asInt() == 1 ? "Ano" : "Ne"));
+                System.out.println("  Active: " + (item.get("Active").asInt() == 1 ? "Yes" : "No"));
                 if (item.has("CompanyId")) {
                     System.out.println("  CompanyId (Item): " + item.get("CompanyId").asText());
-                    System.out.println("  typeOfUser (pro Keycloak): " + item.get("CompanyId").asText());
+                    System.out.println("  typeOfUser (for Keycloak): " + item.get("CompanyId").asText());
                 }
             }
 
         } catch (Exception e) {
-            System.out.println("  Chyba při výpisu info: " + e.getMessage());
+            System.out.println("  Error printing info: " + e.getMessage());
         }
     }
 }
