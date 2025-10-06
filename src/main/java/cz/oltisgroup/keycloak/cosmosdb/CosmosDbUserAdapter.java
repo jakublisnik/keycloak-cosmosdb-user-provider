@@ -183,11 +183,11 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             } catch (Exception ex) {
                 logger.debugf("Failed to persist attribute(list) %s for user %s: %s", name, username, ex.getMessage());
             }
-        } else if (("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name) || "typeOfUser".equalsIgnoreCase(name)) && values != null) {
+        } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name)  && values != null) {
             String v = values.isEmpty() ? null : values.get(0);
             try {
                 if (provider != null) {
-                    String cid = (name.equalsIgnoreCase("companyId") || name.equalsIgnoreCase("typeOfUser")) ? v : null;
+                    String cid = name.equalsIgnoreCase("companyId")  ? v : null;
                     String lid = name.equalsIgnoreCase("userLWPId") ? v : null;
                     provider.updateHeaderAttributes(username, cid, lid);
                 }
@@ -273,7 +273,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 String dou = getUserLWPId();
                 return dou == null ? Stream.empty() : Stream.of(dou);
             default:
-                // fallback původní logika
                 if (headerDoc != null && headerDoc.has(name)) {
                     return Stream.of(headerDoc.get(name).asText());
                 }
