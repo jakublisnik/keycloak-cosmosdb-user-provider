@@ -26,13 +26,17 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
     private final boolean emailFromSource;
     private final boolean firstNameFromSource;
     private final boolean lastNameFromSource;
+    // Injected provider to avoid deprecated session.getProvider/component provider calls
+    private final CosmosDbUserStorageProvider provider;
 
     public CosmosDbUserAdapter(KeycloakSession session, RealmModel realm,
-                               ComponentModel model, JsonNode userDocument) {
+                               ComponentModel model, JsonNode userDocument,
+                               CosmosDbUserStorageProvider provider) {
         super(session, realm, model);
         this.userDocument = userDocument;
         this.headerDoc = userDocument.get("Header");
         this.itemDoc = userDocument.get("Item");
+        this.provider = provider;
 
         this.username = headerDoc != null && headerDoc.has("UserAdId") ? headerDoc.get("UserAdId").asText() : null;
         this.email = itemDoc != null ? firstNonBlank(itemDoc, "Email", "email") : null;
@@ -79,7 +83,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
     public void setEmail(String email) {
         // Persist to Cosmos DB as source-of-truth as well
         try {
-            CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
             if (provider != null) {
                 provider.updateEmail(username, email);
             }
@@ -122,7 +125,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
     public void setFirstName(String firstName) {
         // Persist to Cosmos DB
         try {
-            CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
             if (provider != null) {
                 provider.updateUserNames(username, firstName, null);
             }
@@ -138,7 +140,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
     public void setSingleAttribute(String name, String value) {
         if ("firstName".equals(name) || "lastName".equals(name)) {
             try {
-                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
                 if (provider != null) {
                     String fn = "firstName".equals(name) ? value : null;
                     String ln = "lastName".equals(name) ? value : null;
@@ -149,7 +150,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             }
         } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name) || "typeOfUser".equalsIgnoreCase(name)) {
             try {
-                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
                 if (provider != null) {
                     String cid = (name.equalsIgnoreCase("companyId") || name.equalsIgnoreCase("typeOfUser")) ? value : null;
                     String lid = name.equalsIgnoreCase("userLWPId") ? value : null;
@@ -160,7 +160,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             }
         } else if ("email".equalsIgnoreCase(name)) {
             try {
-                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
                 if (provider != null) {
                     provider.updateEmail(username, value);
                 }
@@ -176,7 +175,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
         if (("firstName".equals(name) || "lastName".equals(name)) && values != null) {
             String v = values.isEmpty() ? null : values.get(0);
             try {
-                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
                 if (provider != null) {
                     String fn = "firstName".equals(name) ? v : null;
                     String ln = "lastName".equals(name) ? v : null;
@@ -188,7 +186,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
         } else if (("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name) || "typeOfUser".equalsIgnoreCase(name)) && values != null) {
             String v = values.isEmpty() ? null : values.get(0);
             try {
-                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
                 if (provider != null) {
                     String cid = (name.equalsIgnoreCase("companyId") || name.equalsIgnoreCase("typeOfUser")) ? v : null;
                     String lid = name.equalsIgnoreCase("userLWPId") ? v : null;
@@ -200,7 +197,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
         } else if ("email".equalsIgnoreCase(name) && values != null) {
             String v = values.isEmpty() ? null : values.get(0);
             try {
-                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
                 if (provider != null) {
                     provider.updateEmail(username, v);
                 }
@@ -223,7 +219,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
     public void setLastName(String lastName) {
         // Persist to Cosmos DB
         try {
-            CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
             if (provider != null) {
                 provider.updateUserNames(username, null, lastName);
             }
@@ -242,7 +237,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
     @Override
     public void setEnabled(boolean enabled) {
         try {
-            CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
             if (provider != null) {
                 provider.updateActive(username, enabled);
             }

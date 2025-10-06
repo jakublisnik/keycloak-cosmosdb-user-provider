@@ -131,7 +131,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
         JsonNode userDoc = findActiveUserByUsername(username);
         if (userDoc != null) {
             logger.debugf("Active user %s found (cached=%s)", username, userDocCache.containsKey(username));
-            return new CosmosDbUserAdapter(session, realm, model, userDoc);
+            return new CosmosDbUserAdapter(session, realm, model, userDoc, this);
         }
         logger.debugf("No active user found for %s", username);
         return null;
@@ -148,7 +148,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
                 if (isUserActive(userDoc)) {
                     String username = userDoc.has("Header") && userDoc.get("Header").has("UserAdId") ? userDoc.get("Header").get("UserAdId").asText() : null;
                     cacheAndReturn(username, userDoc);
-                    return new CosmosDbUserAdapter(session, realm, model, userDoc);
+                    return new CosmosDbUserAdapter(session, realm, model, userDoc, this);
                 }
             }
         } catch (Exception e) {
@@ -242,7 +242,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
                 if (isUserActive(userDoc)) {
                     String username = userDoc.has("Header") && userDoc.get("Header").has("UserAdId") ? userDoc.get("Header").get("UserAdId").asText() : null;
                     cacheAndReturn(username, userDoc);
-                    users.add(new CosmosDbUserAdapter(session, realm, model, userDoc));
+                    users.add(new CosmosDbUserAdapter(session, realm, model, userDoc, this));
                 }
             }
         } catch (Exception e) {
@@ -267,7 +267,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
                 if (isUserActive(userDoc)) {
                     String username = userDoc.has("Header") && userDoc.get("Header").has("UserAdId") ? userDoc.get("Header").get("UserAdId").asText() : null;
                     cacheAndReturn(username, userDoc);
-                    users.add(new CosmosDbUserAdapter(session, realm, model, userDoc));
+                    users.add(new CosmosDbUserAdapter(session, realm, model, userDoc, this));
                 }
             }
         } catch (Exception e) {
@@ -319,6 +319,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             usersContainer.upsertItem(userDoc);
             logger.infof("Password updated in Cosmos DB for user %s", user.getUsername());
             userDocCache.put(user.getUsername(), userDoc);
+            userDocCache.put(user.getUsername().toLowerCase(Locale.ROOT), userDoc);
             return true;
         } catch (Exception e) {
             logger.error("Error updating password in Cosmos DB for user " + user.getUsername(), e);
@@ -371,7 +372,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.infof("User %s created (minimal doc)", username);
 
             JsonNode asJson = new ObjectMapper().convertValue(userDoc, JsonNode.class);
-            return new CosmosDbUserAdapter(session, realm, model, asJson);
+            return new CosmosDbUserAdapter(session, realm, model, asJson, this);
 
         } catch (Exception e) {
             logger.error("Failed to create user: " + username, e);
