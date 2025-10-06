@@ -35,9 +35,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
         this.itemDoc = userDocument.get("Item");
 
         this.username = headerDoc != null && headerDoc.has("UserAdId") ? headerDoc.get("UserAdId").asText() : null;
-        String emailTmp = itemDoc != null && itemDoc.has("Email") && !itemDoc.get("Email").asText().isBlank() ? itemDoc.get("Email").asText() : null;
-        this.email = emailTmp;
-
+        this.email = itemDoc != null ? firstNonBlank(itemDoc, "Email", "email") : null;
 
         this.firstNameFromSource = (itemDoc != null && (itemDoc.has("name") || itemDoc.has("Name")) &&
                 !(firstNonBlank(itemDoc, "name", "Name") == null));
@@ -66,24 +64,32 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public String getEmail() {
+        // Prefer federated attribute for immediate consistency after admin edits, fallback to source
+        String stored = super.getFirstAttribute("email");
+        if (stored != null && !stored.isBlank()) {
+            return stored;
+        }
         if (email != null && !email.isBlank()) {
             return email;
         }
-        String stored = super.getFirstAttribute("email");
-        return (stored == null || stored.isBlank()) ? null : stored;
+        return null;
     }
 
     @Override
     public void setEmail(String email) {
-        if (emailFromSource) {
-            logger.debugf("Ignoring setEmail for user %s – email pochází ze zdroje", username);
-            return;
+        // Persist to Cosmos DB as source-of-truth as well
+        try {
+            CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+            if (provider != null) {
+                provider.updateEmail(username, email);
+            }
+        } catch (Exception ex) {
+            logger.debugf("Failed to persist email for user %s into Cosmos DB: %s", username, ex.getMessage());
         }
+        // Keep federated attribute for UI consistency when editing
         if (email == null || email.isBlank()) {
-            logger.debugf("Clearing federated email for user %s", username);
             setSingleAttribute("email", null);
         } else {
-            logger.debugf("Setting federated email for user %s -> %s", username, email);
             setSingleAttribute("email", email);
         }
     }
@@ -114,15 +120,95 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setFirstName(String firstName) {
-        if (firstNameFromSource) {
-            logger.debugf("Ignoring setFirstName for user %s – pochází ze zdroje", username);
-            return;
+        // Persist to Cosmos DB
+        try {
+            CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+            if (provider != null) {
+                provider.updateUserNames(username, firstName, null);
+            }
+        } catch (Exception ex) {
+            logger.debugf("Failed to persist firstName for user %s into Cosmos DB: %s", username, ex.getMessage());
         }
-        if (firstName == null || firstName.isBlank()) {
-            setSingleAttribute("firstName", null);
-        } else {
-            setSingleAttribute("firstName", firstName);
+        // Keep federated attribute for immediate UI consistency
+        setSingleAttribute("firstName", (firstName == null || firstName.isBlank()) ? null : firstName);
+    }
+
+    // Intercept UserProfile attribute updates as well
+    @Override
+    public void setSingleAttribute(String name, String value) {
+        if ("firstName".equals(name) || "lastName".equals(name)) {
+            try {
+                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+                if (provider != null) {
+                    String fn = "firstName".equals(name) ? value : null;
+                    String ln = "lastName".equals(name) ? value : null;
+                    provider.updateUserNames(username, fn, ln);
+                }
+            } catch (Exception ex) {
+                logger.debugf("Failed to persist attribute %s for user %s: %s", name, username, ex.getMessage());
+            }
+        } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name) || "typeOfUser".equalsIgnoreCase(name)) {
+            try {
+                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+                if (provider != null) {
+                    String cid = (name.equalsIgnoreCase("companyId") || name.equalsIgnoreCase("typeOfUser")) ? value : null;
+                    String lid = name.equalsIgnoreCase("userLWPId") ? value : null;
+                    provider.updateHeaderAttributes(username, cid, lid);
+                }
+            } catch (Exception ex) {
+                logger.debugf("Failed to persist header attribute %s for user %s: %s", name, username, ex.getMessage());
+            }
+        } else if ("email".equalsIgnoreCase(name)) {
+            try {
+                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+                if (provider != null) {
+                    provider.updateEmail(username, value);
+                }
+            } catch (Exception ex) {
+                logger.debugf("Failed to persist email via setSingleAttribute for user %s: %s", username, ex.getMessage());
+            }
         }
+        super.setSingleAttribute(name, value);
+    }
+
+    @Override
+    public void setAttribute(String name, List<String> values) {
+        if (("firstName".equals(name) || "lastName".equals(name)) && values != null) {
+            String v = values.isEmpty() ? null : values.get(0);
+            try {
+                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+                if (provider != null) {
+                    String fn = "firstName".equals(name) ? v : null;
+                    String ln = "lastName".equals(name) ? v : null;
+                    provider.updateUserNames(username, fn, ln);
+                }
+            } catch (Exception ex) {
+                logger.debugf("Failed to persist attribute(list) %s for user %s: %s", name, username, ex.getMessage());
+            }
+        } else if (("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name) || "typeOfUser".equalsIgnoreCase(name)) && values != null) {
+            String v = values.isEmpty() ? null : values.get(0);
+            try {
+                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+                if (provider != null) {
+                    String cid = (name.equalsIgnoreCase("companyId") || name.equalsIgnoreCase("typeOfUser")) ? v : null;
+                    String lid = name.equalsIgnoreCase("userLWPId") ? v : null;
+                    provider.updateHeaderAttributes(username, cid, lid);
+                }
+            } catch (Exception ex) {
+                logger.debugf("Failed to persist header attribute(list) %s for user %s: %s", name, username, ex.getMessage());
+            }
+        } else if ("email".equalsIgnoreCase(name) && values != null) {
+            String v = values.isEmpty() ? null : values.get(0);
+            try {
+                CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+                if (provider != null) {
+                    provider.updateEmail(username, v);
+                }
+            } catch (Exception ex) {
+                logger.debugf("Failed to persist email via setAttribute for user %s: %s", username, ex.getMessage());
+            }
+        }
+        super.setAttribute(name, values);
     }
 
     @Override
@@ -135,23 +221,36 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setLastName(String lastName) {
-        if (lastNameFromSource) {
-            logger.debugf("Ignoring setLastName for user %s – pochází ze zdroje", username);
-            return;
+        // Persist to Cosmos DB
+        try {
+            CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+            if (provider != null) {
+                provider.updateUserNames(username, null, lastName);
+            }
+        } catch (Exception ex) {
+            logger.debugf("Failed to persist lastName for user %s into Cosmos DB: %s", username, ex.getMessage());
         }
-        if (lastName == null || lastName.isBlank()) {
-            setSingleAttribute("lastName", null);
-        } else {
-            setSingleAttribute("lastName", lastName);
-        }
+        // Keep federated attribute for immediate UI consistency
+        setSingleAttribute("lastName", (lastName == null || lastName.isBlank()) ? null : lastName);
     }
 
     @Override
     public boolean isEnabled() {
         return itemDoc != null && itemDoc.has("Active") && itemDoc.get("Active").asInt() == 1;
     }
+
     @Override
-    public void setEnabled(boolean enabled) { /* read-only */ }
+    public void setEnabled(boolean enabled) {
+        try {
+            CosmosDbUserStorageProvider provider = session.getProvider(CosmosDbUserStorageProvider.class, storageProviderModel);
+            if (provider != null) {
+                provider.updateActive(username, enabled);
+            }
+        } catch (Exception ex) {
+            logger.debugf("Failed to persist enabled for user %s into Cosmos DB: %s", username, ex.getMessage());
+        }
+        // no federated storage for enabled flag here
+    }
 
     @Override
     public String getId() { return StorageId.keycloakId(storageProviderModel, username); }
@@ -172,9 +271,11 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             case "username":
                 return username == null ? Stream.empty() : Stream.of(username);
             case "companyId":
+            case "CompanyId":
                 String tou = getCompanyId();
                 return tou == null ? Stream.empty() : Stream.of(tou);
             case "userLWPId":
+            case "UserLWPId":
                 String dou = getUserLWPId();
                 return dou == null ? Stream.empty() : Stream.of(dou);
             default:
@@ -207,7 +308,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
         String fn = getFirstName(); if (fn != null) m.put("firstName", List.of(fn));
         String ln = getLastName(); if (ln != null) m.put("lastName", List.of(ln));
         String em = getEmail(); if (em != null) m.put("email", List.of(em));
-        String tou = getCompanyId(); if (tou != null) m.put("companyId", List.of(tou));
+        String tou = getCompanyId(); if (tou != null) { m.put("companyId", List.of(tou)); }
         String dou = getUserLWPId(); if (dou != null) m.put("userLWPId", List.of(dou));
         if (itemDoc != null && itemDoc.has("Active")) {
             m.put("Active", List.of(itemDoc.get("Active").asText()));

@@ -16,6 +16,9 @@ public class TestCosmosDbProvider {
         String containerName = "db_container_name";
 
         testCosmosDbConnection(endpoint, key, databaseName, containerName);
+
+        // Optional one-off maintenance: uncomment to clean lowercase 'email' keys
+        // cleanupLowercaseEmail(endpoint, key, databaseName, containerName, true);
     }
 
     public static void testCosmosDbConnection(String endpoint, String key,
@@ -59,6 +62,52 @@ public class TestCosmosDbProvider {
             if (cosmosClient != null) {
                 cosmosClient.close();
             }
+        }
+    }
+
+    // One-off maintenance: normalize Item.email -> Item.Email, remove lowercase variant
+    public static void cleanupLowercaseEmail(String endpoint, String key,
+                                             String databaseName, String containerName,
+                                             boolean dryRun) {
+        CosmosClient client = null;
+        try {
+            System.out.println("=== Cleanup lowercase 'email' keys ===");
+            client = new CosmosClientBuilder().endpoint(endpoint).key(key)
+                    .consistencyLevel(ConsistencyLevel.SESSION).buildClient();
+            CosmosContainer container = client.getDatabase(databaseName).getContainer(containerName);
+
+            String query = "SELECT * FROM c WHERE IS_DEFINED(c.Item.email)";
+            CosmosPagedIterable<JsonNode> results = container.queryItems(query, new CosmosQueryRequestOptions(), JsonNode.class);
+            int total = 0, updated = 0;
+            for (JsonNode doc : results) {
+                total++;
+                JsonNode item = doc.get("Item");
+                if (item != null && item.has("email")) {
+                    String lower = item.get("email").asText();
+                    String upper = item.has("Email") ? item.get("Email").asText() : null;
+                    boolean needUpdate = false;
+                    com.fasterxml.jackson.databind.node.ObjectNode itemObj = (com.fasterxml.jackson.databind.node.ObjectNode) item;
+                    if ((upper == null || upper.isBlank()) && lower != null && !lower.isBlank()) {
+                        itemObj.put("Email", lower);
+                        needUpdate = true;
+                    }
+                    if (item.has("email")) {
+                        itemObj.remove("email");
+                        needUpdate = true;
+                    }
+                    if (needUpdate) {
+                        updated++;
+                        if (!dryRun) {
+                            container.upsertItem(doc);
+                        }
+                    }
+                }
+            }
+            System.out.printf("Scanned: %d, Updated: %d, DryRun=%s%n", total, updated, dryRun);
+        } catch (Exception e) {
+            System.err.println("❌ Cleanup error: " + e.getMessage());
+        } finally {
+            if (client != null) client.close();
         }
     }
 
@@ -124,7 +173,7 @@ public class TestCosmosDbProvider {
     private static void testFindUserByEmail(CosmosContainer container, String email) {
         try {
             System.out.println("\n=== Test: Find user by email ===");
-            String query = "SELECT * FROM c WHERE c.Item.Email = '" + email + "'";
+            String query = "SELECT * FROM c WHERE c.Item.Email = '" + email + "' OR c.Item.email = '" + email + "'";
 
             CosmosPagedIterable<JsonNode> queryResponse = container.queryItems(
                     query,
@@ -213,19 +262,16 @@ public class TestCosmosDbProvider {
 
             if (header != null) {
                 System.out.println("  UserAdId: " + header.get("UserAdId").asText());
-                System.out.println("  CompanyId: " + header.get("CompanyId").asText());
+                if (header.has("CompanyId")) System.out.println("  CompanyId: " + header.get("CompanyId").asText());
             }
 
             if (item != null) {
-                System.out.println("  First name: " + item.get("Name").asText());
-                System.out.println("  Last name: " + item.get("Surename").asText());
-                System.out.println("  Email: " + item.get("Email").asText());
-                System.out.println("  Role: " + item.get("Role").asText());
-                System.out.println("  Active: " + (item.get("Active").asInt() == 1 ? "Yes" : "No"));
-                if (item.has("CompanyId")) {
-                    System.out.println("  CompanyId (Item): " + item.get("CompanyId").asText());
-                    System.out.println("  typeOfUser (for Keycloak): " + item.get("CompanyId").asText());
-                }
+                if (item.has("Name")) System.out.println("  First name: " + item.get("Name").asText());
+                if (item.has("Surename")) System.out.println("  Last name: " + item.get("Surename").asText());
+                if (item.has("Email")) System.out.println("  Email: " + item.get("Email").asText());
+                if (item.has("email")) System.out.println("  Email (lowercase): " + item.get("email").asText());
+                if (item.has("Role")) System.out.println("  Role: " + item.get("Role").asText());
+                if (item.has("Active")) System.out.println("  Active: " + (item.get("Active").asInt() == 1 ? "Yes" : "No"));
             }
 
         } catch (Exception e) {

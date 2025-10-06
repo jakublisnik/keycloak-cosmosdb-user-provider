@@ -4,26 +4,26 @@ import com.azure.cosmos.*;
 import com.azure.cosmos.models.*;
 import com.azure.cosmos.util.CosmosPagedIterable;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jboss.logging.Logger;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.credential.CredentialInput;
 import org.keycloak.credential.CredentialInputUpdater;
 import org.keycloak.credential.CredentialInputValidator;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
+import org.keycloak.http.HttpRequest;
+import org.keycloak.models.*;
 import org.keycloak.models.credential.PasswordCredentialModel;
 import org.keycloak.storage.StorageId;
 import org.keycloak.storage.UserStorageProvider;
 import org.keycloak.storage.user.UserLookupProvider;
 import org.keycloak.storage.user.UserQueryProvider;
-import org.keycloak.models.GroupModel;
+import org.keycloak.storage.user.UserRegistrationProvider;
 
 import java.util.*;
 import java.util.stream.Stream;
 
 public class CosmosDbUserStorageProvider implements UserStorageProvider,
-        UserLookupProvider, CredentialInputValidator, UserQueryProvider, CredentialInputUpdater {
+        UserLookupProvider, CredentialInputValidator, UserQueryProvider, CredentialInputUpdater, UserRegistrationProvider {
 
     private static final Logger logger = Logger.getLogger(CosmosDbUserStorageProvider.class);
 
@@ -141,7 +141,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
     public UserModel getUserByEmail(RealmModel realm, String email) {
         logger.debugf("getUserByEmail called with email: %s", email);
         try {
-            String query = "SELECT c.Header, c.Item FROM c WHERE c.Item.Email = @email";
+            String query = "SELECT c.Header, c.Item FROM c WHERE c.Item.Email = @email OR c.Item.email = @email";
             SqlQuerySpec querySpec = new SqlQuerySpec(query, Collections.singletonList(new SqlParameter("@email", email)));
             CosmosPagedIterable<JsonNode> results = usersContainer.queryItems(querySpec, new CosmosQueryRequestOptions(), JsonNode.class);
             for (JsonNode userDoc : results) {
@@ -228,7 +228,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             List<SqlParameter> parameters = new ArrayList<>();
             String search = params.get("search");
             if (search != null && !search.isEmpty()) {
-                queryBuilder.append(" AND (CONTAINS(LOWER(c.Header.UserAdId), @search) OR CONTAINS(LOWER(c.Item.Email), @search))");
+                queryBuilder.append(" AND (CONTAINS(LOWER(c.Header.UserAdId), @search) OR CONTAINS(LOWER(c.Item.Email), @search) OR CONTAINS(LOWER(c.Item.email), @search))");
                 parameters.add(new SqlParameter("@search", search.toLowerCase()));
             }
             if (firstResult != null && maxResults != null) {
@@ -296,8 +296,8 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             }
 
             if (!userDoc.has("id")) {
-                String query = "SELECT * FROM c WHERE c.Header.UserAdId = @uname";
-                SqlQuerySpec querySpec = new SqlQuerySpec(query, Collections.singletonList(new SqlParameter("@uname", user.getUsername())));
+                String query = "SELECT * FROM c WHERE LOWER(c.Header.UserAdId) = @uname";
+                SqlQuerySpec querySpec = new SqlQuerySpec(query, Collections.singletonList(new SqlParameter("@uname", user.getUsername().toLowerCase(Locale.ROOT))));
                 CosmosPagedIterable<JsonNode> results = usersContainer.queryItems(querySpec, new CosmosQueryRequestOptions(), JsonNode.class);
                 for (JsonNode fullDoc : results) {
                     if (fullDoc.has("id")) {
@@ -335,4 +335,286 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
         // Pro Cosmos DB není žádný typ hesla, který lze deaktivovat. Ale metoda musí existovat.
         return Stream.empty();
     }
+
+    @Override
+    public UserModel addUser(RealmModel realm, String username) {
+        try {
+            String documentId = java.util.UUID.randomUUID().toString();
+
+            logger.infof("=== DEBUG: addUser called for: %s ===", username);
+
+            Map<String, Object> header = new HashMap<>();
+            header.put("UserAdId", username);
+
+            Map<String, Object> item = new HashMap<>();
+            item.put("Active", 1);
+
+            // Capture email from form if present (only Item.Email)
+            try {
+                KeycloakContext ctx = session.getContext();
+                HttpRequest req = ctx != null ? ctx.getHttpRequest() : null;
+                if (req != null) {
+                    jakarta.ws.rs.core.MultivaluedMap<String, String> form = req.getDecodedFormParameters();
+                    String email = form != null ? form.getFirst("email") : null;
+                    if (email != null && !email.isBlank()) {
+                        item.put("Email", email);
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            Map<String, Object> userDoc = new java.util.LinkedHashMap<>();
+            userDoc.put("Header", header);
+            userDoc.put("Item", item);
+            userDoc.put("id", documentId);
+
+            usersContainer.createItem(userDoc);
+            logger.infof("User %s created (minimal doc)", username);
+
+            JsonNode asJson = new ObjectMapper().convertValue(userDoc, JsonNode.class);
+            return new CosmosDbUserAdapter(session, realm, model, asJson);
+
+        } catch (Exception e) {
+            logger.error("Failed to create user: " + username, e);
+            return null;
+        }
+    }
+
+    // --- Helpers for persisting profile changes from Keycloak ---
+    public void updateUserNames(String username, String firstNameOrNull, String lastNameOrNull) {
+        if ((firstNameOrNull == null || firstNameOrNull.isBlank()) && (lastNameOrNull == null || lastNameOrNull.isBlank())) {
+            return; // nothing to do
+        }
+        try {
+            JsonNode userDoc = findActiveUserByUsername(username);
+            if (userDoc == null) {
+                logger.debugf("updateUserNames: user not found: %s", username);
+                return;
+            }
+            // ensure full doc with id
+            if (!userDoc.has("id")) {
+                String q = "SELECT * FROM c WHERE LOWER(c.Header.UserAdId) = @uname";
+                SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@uname", username.toLowerCase(Locale.ROOT))));
+                CosmosPagedIterable<JsonNode> res = usersContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+                for (JsonNode full : res) { userDoc = full; break; }
+            }
+            if (!userDoc.has("id")) {
+                logger.warnf("updateUserNames: missing id for user %s", username);
+                return;
+            }
+            JsonNode item = userDoc.get("Item");
+            if (item == null || !item.isObject()) {
+                logger.warnf("updateUserNames: missing Item for user %s", username);
+                return;
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode itemObj = (com.fasterxml.jackson.databind.node.ObjectNode) item;
+            if (firstNameOrNull != null && !firstNameOrNull.isBlank()) {
+                itemObj.put("Name", firstNameOrNull);
+            }
+            if (lastNameOrNull != null && !lastNameOrNull.isBlank()) {
+                itemObj.put("Surename", lastNameOrNull);
+            }
+            usersContainer.upsertItem(userDoc);
+            // refresh cache
+            userDocCache.put(username, userDoc);
+            userDocCache.put(username.toLowerCase(Locale.ROOT), userDoc);
+            logger.debugf("updateUserNames: persisted for %s (firstName set=%s, lastName set=%s)", username,
+                    firstNameOrNull != null, lastNameOrNull != null);
+        } catch (Exception ex) {
+            logger.error("updateUserNames failed for user " + username, ex);
+        }
+    }
+
+    public void updateUserFromKeycloak(String username, String firstName, String lastName, String email,
+                                       String companyId, String userLWPId) {
+        try {
+            JsonNode userDoc = findActiveUserByUsername(username);
+            boolean create = (userDoc == null);
+
+            if (create) {
+                Map<String, Object> header = new HashMap<>();
+                header.put("UserAdId", username);
+                if (companyId != null && !companyId.isBlank()) header.put("CompanyId", companyId);
+                if (userLWPId != null && !userLWPId.isBlank()) header.put("UserLWPId", userLWPId);
+
+                Map<String, Object> item = new HashMap<>();
+                item.put("Active", 1);
+                if (firstName != null && !firstName.isBlank()) item.put("Name", firstName);
+                if (lastName != null && !lastName.isBlank()) item.put("Surename", lastName);
+                if (email != null && !email.isBlank()) item.put("Email", email);
+
+                Map<String, Object> doc = new java.util.LinkedHashMap<>();
+                doc.put("Header", header);
+                doc.put("Item", item);
+                doc.put("id", java.util.UUID.randomUUID().toString());
+                usersContainer.createItem(doc);
+                JsonNode asJson = new ObjectMapper().convertValue(doc, JsonNode.class);
+                userDocCache.put(username, asJson);
+                userDocCache.put(username.toLowerCase(Locale.ROOT), asJson);
+                logger.infof("updateUserFromKeycloak: created new user %s", username);
+                return;
+            }
+
+            // ensure full doc with id
+            if (!userDoc.has("id")) {
+                String q = "SELECT * FROM c WHERE LOWER(c.Header.UserAdId) = @uname";
+                SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@uname", username.toLowerCase(Locale.ROOT))));
+                CosmosPagedIterable<JsonNode> res = usersContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+                for (JsonNode full : res) { userDoc = full; break; }
+            }
+            if (!userDoc.has("id")) {
+                logger.warnf("updateUserFromKeycloak: missing id for user %s", username);
+                return;
+            }
+
+            com.fasterxml.jackson.databind.node.ObjectNode header = (com.fasterxml.jackson.databind.node.ObjectNode) userDoc.get("Header");
+            com.fasterxml.jackson.databind.node.ObjectNode item = (com.fasterxml.jackson.databind.node.ObjectNode) userDoc.get("Item");
+            if (header == null || item == null) {
+                logger.warnf("updateUserFromKeycloak: missing Header/Item for user %s", username);
+                return;
+            }
+
+            if (firstName != null && !firstName.isBlank()) item.put("Name", firstName);
+            if (lastName != null && !lastName.isBlank()) item.put("Surename", lastName);
+            if (email != null && !email.isBlank()) {
+                item.put("Email", email);
+                item.remove("email"); // cleanup lowercase key if present
+            }
+            if (companyId != null && !companyId.isBlank()) header.put("CompanyId", companyId);
+            if (userLWPId != null && !userLWPId.isBlank()) header.put("UserLWPId", userLWPId);
+
+            usersContainer.upsertItem(userDoc);
+            userDocCache.put(username, userDoc);
+            userDocCache.put(username.toLowerCase(Locale.ROOT), userDoc);
+            logger.infof("updateUserFromKeycloak: updated user %s", username);
+        } catch (Exception e) {
+            logger.error("updateUserFromKeycloak failed for user " + username, e);
+        }
+    }
+
+    public void updateEmail(String username, String email) {
+        try {
+            JsonNode userDoc = findActiveUserByUsername(username);
+            if (userDoc == null) {
+                // Fallback for inactive users: load full doc by username
+                String q = "SELECT * FROM c WHERE LOWER(c.Header.UserAdId) = @uname";
+                SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@uname", username.toLowerCase(Locale.ROOT))));
+                CosmosPagedIterable<JsonNode> res = usersContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+                for (JsonNode full : res) { userDoc = full; break; }
+                if (userDoc == null) {
+                    logger.infof("updateEmail: user not found (even fallback): %s", username);
+                    return;
+                }
+            }
+            if (!userDoc.has("id")) {
+                String q = "SELECT * FROM c WHERE LOWER(c.Header.UserAdId) = @uname";
+                SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@uname", username.toLowerCase(Locale.ROOT))));
+                CosmosPagedIterable<JsonNode> res = usersContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+                for (JsonNode full : res) { userDoc = full; break; }
+            }
+            if (!userDoc.has("id")) {
+                logger.infof("updateEmail: missing id for user %s", username);
+                return;
+            }
+            JsonNode item = userDoc.get("Item");
+            if (item == null || !item.isObject()) {
+                logger.infof("updateEmail: missing Item for user %s", username);
+                return;
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode itemObj = (com.fasterxml.jackson.databind.node.ObjectNode) item;
+            if (email == null || email.isBlank()) {
+                itemObj.remove("Email");
+                itemObj.remove("email");
+            } else {
+                itemObj.put("Email", email);
+                itemObj.remove("email"); // remove lowercase variant to enforce single key
+            }
+            usersContainer.upsertItem(userDoc);
+            userDocCache.put(username, userDoc);
+            userDocCache.put(username.toLowerCase(Locale.ROOT), userDoc);
+            logger.infof("updateEmail: persisted for %s -> %s", username, email);
+        } catch (Exception ex) {
+            logger.error("updateEmail failed for user " + username, ex);
+        }
+    }
+
+    public void updateActive(String username, boolean enabled) {
+        try {
+            JsonNode userDoc = findActiveUserByUsername(username);
+            if (userDoc == null) {
+                // If user is not returned by findActiveUserByUsername because currently inactive, try by exact username
+                String q = "SELECT * FROM c WHERE LOWER(c.Header.UserAdId) = @uname";
+                SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@uname", username.toLowerCase(Locale.ROOT))));
+                CosmosPagedIterable<JsonNode> res = usersContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+                for (JsonNode full : res) { userDoc = full; break; }
+            }
+            if (userDoc == null || !userDoc.has("id")) {
+                logger.warnf("updateActive: user doc missing or no id for %s", username);
+                return;
+            }
+            JsonNode item = userDoc.get("Item");
+            if (item == null || !item.isObject()) {
+                logger.warnf("updateActive: missing Item for user %s", username);
+                return;
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode itemObj = (com.fasterxml.jackson.databind.node.ObjectNode) item;
+            itemObj.put("Active", enabled ? 1 : 0);
+            usersContainer.upsertItem(userDoc);
+            userDocCache.put(username, userDoc);
+            userDocCache.put(username.toLowerCase(Locale.ROOT), userDoc);
+            logger.debugf("updateActive: persisted for %s -> %s", username, enabled);
+        } catch (Exception ex) {
+            logger.error("updateActive failed for user " + username, ex);
+        }
+    }
+
+    // Update Header attributes like CompanyId and UserLWPId
+    public void updateHeaderAttributes(String username, String companyIdOrNull, String userLWPIdOrNull) {
+        if ((companyIdOrNull == null || companyIdOrNull.isBlank()) && (userLWPIdOrNull == null || userLWPIdOrNull.isBlank())) {
+            return;
+        }
+        try {
+            JsonNode userDoc = findActiveUserByUsername(username);
+            if (userDoc == null) {
+                logger.debugf("updateHeaderAttributes: user not found: %s", username);
+                return;
+            }
+            if (!userDoc.has("id")) {
+                String q = "SELECT * FROM c WHERE LOWER(c.Header.UserAdId) = @uname";
+                SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@uname", username.toLowerCase(Locale.ROOT))));
+                CosmosPagedIterable<JsonNode> res = usersContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+                for (JsonNode full : res) { userDoc = full; break; }
+            }
+            if (!userDoc.has("id")) {
+                logger.warnf("updateHeaderAttributes: missing id for user %s", username);
+                return;
+            }
+            JsonNode header = userDoc.get("Header");
+            if (header == null || !header.isObject()) {
+                logger.warnf("updateHeaderAttributes: missing Header for user %s", username);
+                return;
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode headerObj = (com.fasterxml.jackson.databind.node.ObjectNode) header;
+            if (companyIdOrNull != null && !companyIdOrNull.isBlank()) {
+                headerObj.put("CompanyId", companyIdOrNull);
+            }
+            if (userLWPIdOrNull != null && !userLWPIdOrNull.isBlank()) {
+                headerObj.put("UserLWPId", userLWPIdOrNull);
+            }
+            usersContainer.upsertItem(userDoc);
+            userDocCache.put(username, userDoc);
+            userDocCache.put(username.toLowerCase(Locale.ROOT), userDoc);
+            logger.debugf("updateHeaderAttributes: persisted for %s (CompanyId set=%s, UserLWPId set=%s)", username,
+                    companyIdOrNull != null, userLWPIdOrNull != null);
+        } catch (Exception ex) {
+            logger.error("updateHeaderAttributes failed for user " + username, ex);
+        }
+    }
+
+    @Override
+    public boolean removeUser(RealmModel realm, UserModel user) {
+
+        return false;
+    }
+
+
 }
