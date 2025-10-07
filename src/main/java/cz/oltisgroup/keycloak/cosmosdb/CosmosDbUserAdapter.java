@@ -5,6 +5,7 @@ import org.jboss.logging.Logger;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.credential.UserCredentialManager;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.ModelException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.SubjectCredentialManager;
 import org.keycloak.storage.StorageId;
@@ -88,6 +89,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             }
         } catch (Exception ex) {
             logger.debugf("Failed to persist email for user %s into Cosmos DB: %s", username, ex.getMessage());
+            throw new ModelException("Nepodařilo se uložit data do Cosmos DB. Uživatel nebyl vytvořen.");
         }
         // Keep federated attribute for UI consistency when editing
         if (email == null || email.isBlank()) {
@@ -130,6 +132,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             }
         } catch (Exception ex) {
             logger.debugf("Failed to persist firstName for user %s into Cosmos DB: %s", username, ex.getMessage());
+            throw new ModelException("Failed to persist firstName into Cosmos DB.");
         }
         // Keep federated attribute for immediate UI consistency
         setSingleAttribute("firstName", (firstName == null || firstName.isBlank()) ? null : firstName);
@@ -147,6 +150,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 }
             } catch (Exception ex) {
                 logger.debugf("Failed to persist attribute %s for user %s: %s", name, username, ex.getMessage());
+                throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
             }
         } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name) || "typeOfUser".equalsIgnoreCase(name)) {
             try {
@@ -157,6 +161,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 }
             } catch (Exception ex) {
                 logger.debugf("Failed to persist header attribute %s for user %s: %s", name, username, ex.getMessage());
+                throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
             }
         } else if ("email".equalsIgnoreCase(name)) {
             try {
@@ -165,6 +170,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 }
             } catch (Exception ex) {
                 logger.debugf("Failed to persist email via setSingleAttribute for user %s: %s", username, ex.getMessage());
+                throw new ModelException("Failed to persist email into Cosmos DB.");
             }
         }
         super.setSingleAttribute(name, value);
@@ -182,6 +188,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 }
             } catch (Exception ex) {
                 logger.debugf("Failed to persist attribute(list) %s for user %s: %s", name, username, ex.getMessage());
+                throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
             }
         } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name)  && values != null) {
             String v = values.isEmpty() ? null : values.get(0);
@@ -193,6 +200,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 }
             } catch (Exception ex) {
                 logger.debugf("Failed to persist header attribute(list) %s for user %s: %s", name, username, ex.getMessage());
+                throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
             }
         } else if ("email".equalsIgnoreCase(name) && values != null) {
             String v = values.isEmpty() ? null : values.get(0);
@@ -202,6 +210,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 }
             } catch (Exception ex) {
                 logger.debugf("Failed to persist email via setAttribute for user %s: %s", username, ex.getMessage());
+                throw new ModelException("Failed to persist email into Cosmos DB.");
             }
         }
         super.setAttribute(name, values);
@@ -224,6 +233,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             }
         } catch (Exception ex) {
             logger.debugf("Failed to persist lastName for user %s into Cosmos DB: %s", username, ex.getMessage());
+            throw new ModelException("Failed to persist lastName into Cosmos DB.");
         }
         // Keep federated attribute for immediate UI consistency
         setSingleAttribute("lastName", (lastName == null || lastName.isBlank()) ? null : lastName);
@@ -242,6 +252,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             }
         } catch (Exception ex) {
             logger.debugf("Failed to persist enabled for user %s into Cosmos DB: %s", username, ex.getMessage());
+            throw new ModelException("Failed to persist enabled into Cosmos DB.");
         }
         // no federated storage for enabled flag here
     }

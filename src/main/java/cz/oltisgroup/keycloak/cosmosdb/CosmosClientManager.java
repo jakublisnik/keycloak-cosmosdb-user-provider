@@ -4,6 +4,7 @@ import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
 import com.azure.cosmos.ConsistencyLevel;
 import org.jboss.logging.Logger;
+import org.keycloak.models.ModelException;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -110,6 +111,7 @@ public final class CosmosClientManager {
     }
 
     private static void safeClose(CosmosClient client) {
-        try { client.close(); } catch (Exception ex) { logger.warn("Error closing CosmosClient", ex); }
+        try { client.close(); } catch (Exception ex) { logger.warn("Error closing CosmosClient", ex); throw new ModelException("Error closing CosmosClient", ex);
+        }
     }
 }

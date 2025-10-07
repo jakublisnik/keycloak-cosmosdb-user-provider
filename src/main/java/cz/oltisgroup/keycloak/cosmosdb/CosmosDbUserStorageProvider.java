@@ -113,6 +113,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             }
         } catch (Exception e) {
             logger.error("Error querying user by username (case-insensitive): " + raw, e);
+            throw new ModelException("Error querying user by username", e);
         }
         return null;
     }
@@ -153,6 +154,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             }
         } catch (Exception e) {
             logger.error("Error fetching user by email: " + email, e);
+            throw new ModelException("Error fetching user by email", e);
         }
         return null;
     }
@@ -216,6 +218,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             }
         } catch (Exception e) {
             logger.error("Error getting users count", e);
+            throw new ModelException("Error getting users count", e);
         }
         return 0;
     }
@@ -247,6 +250,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             }
         } catch (Exception e) {
             logger.error("Error searching users", e);
+            throw new ModelException("Error searching users", e);
         }
         return users.stream();
     }
@@ -272,6 +276,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             }
         } catch (Exception e) {
             logger.error("Error searching by attribute: " + attrName + " = " + attrValue, e);
+            throw new ModelException("Error searching users by attribute", e);
         }
 
         return users.stream();
@@ -323,7 +328,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             return true;
         } catch (Exception e) {
             logger.error("Error updating password in Cosmos DB for user " + user.getUsername(), e);
-            return false;
+            throw new ModelException("Error updating password in Cosmos DB for user");
         }
     }
 
@@ -361,7 +366,9 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
                         item.put("Email", email);
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                throw new ModelException("Error capturing email from form during user creation");
+            }
 
             Map<String, Object> userDoc = new java.util.LinkedHashMap<>();
             userDoc.put("Header", header);
@@ -376,7 +383,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
 
         } catch (Exception e) {
             logger.error("Failed to create user: " + username, e);
-            return null;
+            throw new ModelException("Error creating user in Cosmos DB: " + username, e);
         }
     }
 
@@ -422,6 +429,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
                     firstNameOrNull != null, lastNameOrNull != null);
         } catch (Exception ex) {
             logger.error("updateUserNames failed for user " + username, ex);
+            throw new ModelException("Error updating names in Cosmos DB for user " + username, ex);
         }
     }
 
@@ -469,6 +477,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.infof("updateEmail: persisted for %s -> %s", username, email);
         } catch (Exception ex) {
             logger.error("updateEmail failed for user " + username, ex);
+            throw new ModelException("Error updating email in Cosmos DB for user " + username, ex);
         }
     }
 
@@ -499,6 +508,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.debugf("updateActive: persisted for %s -> %s", username, enabled);
         } catch (Exception ex) {
             logger.error("updateActive failed for user " + username, ex);
+            throw new ModelException("Error updating active status in Cosmos DB for user " + username, ex);
         }
     }
 
@@ -542,6 +552,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
                     companyIdOrNull != null, userLWPIdOrNull != null);
         } catch (Exception ex) {
             logger.error("updateHeaderAttributes failed for user " + username, ex);
+            throw new ModelException("Error updating header attributes in Cosmos DB for user " + username, ex);
         }
     }
 
