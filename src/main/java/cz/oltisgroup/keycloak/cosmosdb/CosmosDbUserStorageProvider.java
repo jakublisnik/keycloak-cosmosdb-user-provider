@@ -375,6 +375,31 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             userDoc.put("Item", item);
             userDoc.put("id", documentId);
 
+            header.put("Guid", java.util.UUID.randomUUID().toString());
+            header.put("SrcSystem", "AZURE");
+            header.put("DstSystem", "mda");
+            header.put("IntegrationID", "220");
+            header.put("IntegrationVer", "1.01");
+            header.put("IntegrationType", "Request");
+            header.put("Description", "Users");
+            header.put("SrcVersion", null);
+            header.put("ModeShift", 0);
+            header.put("ProfId", null);
+            header.put("Language", null);
+            header.put("DeviceId", null);
+            header.put("GPSLongtitude", null);
+            header.put("GPSLatitude", null);
+            String now = java.time.OffsetDateTime.now().toString();
+            header.put("TimeStamp", now);
+            header.put("TimeCreation", now);
+            header.put("TimeSend", now);
+
+
+            String passwordExp = java.time.OffsetDateTime.now().plusYears(1).toString();
+            item.put("PasswordExpiration", passwordExp);
+            item.put("PasswordChange", 0);
+
+
             usersContainer.createItem(userDoc);
             logger.infof("User %s created (minimal doc)", username);
 
