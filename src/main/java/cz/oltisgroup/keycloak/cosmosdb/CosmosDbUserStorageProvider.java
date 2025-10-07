@@ -31,6 +31,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
     private final ComponentModel model;
     private final CosmosClient cosmosClient;
     private final CosmosContainer usersContainer;
+    private final CosmosContainer usersExtraContainer;
 
     private final String endpoint;
     private final String key;
@@ -39,6 +40,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
     private final int keepAliveSeconds;
 
     private final Map<String, JsonNode> userDocCache = new HashMap<>();
+    private final CosmosDbExtraUserOps extraOps;
 
     public CosmosDbUserStorageProvider(KeycloakSession session, ComponentModel model) {
         this.session = session;
@@ -60,6 +62,9 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
         this.cosmosClient = CosmosClientManager.acquire(endpoint, key, databaseName, containerName, keepAliveSeconds);
         CosmosDatabase database = cosmosClient.getDatabase(databaseName);
         this.usersContainer = database.getContainer(containerName);
+        String usersContainerName = model.get(CosmosDbUserStorageProviderFactory.USERS_CONTAINER_NAME, "Users");
+        this.usersExtraContainer = database.getContainer(usersContainerName);
+        this.extraOps = new CosmosDbExtraUserOps(usersExtraContainer, logger);
 
         logger.debug("CosmosDbUserStorageProvider successfully initialized (shared client)");
     }
@@ -286,18 +291,18 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
     public boolean updateCredential(RealmModel realm, UserModel user, CredentialInput input) {
         if (!supportsCredentialType(input.getType())) {
             logger.debugf("Unsupported credential type for update: %s", input.getType());
-            return false;
+            throw new ModelException("Unsupported credential type: " + input.getType());
         }
         String newPassword = input.getChallengeResponse();
         if (newPassword == null || newPassword.isBlank()) {
             logger.debug("New password is null or blank");
-            return false;
+            throw new ModelException("New password cannot be null or blank");
         }
         try {
             JsonNode userDoc = findActiveUserByUsername(user.getUsername());
             if (userDoc == null) {
                 logger.debugf("User document not found for password update: %s", user.getUsername());
-                return false;
+                throw new ModelException("User document not found for password update");
             }
 
             if (!userDoc.has("id")) {
@@ -313,18 +318,19 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             }
             if (!userDoc.has("id")) {
                 logger.error("Cannot update password: document missing 'id' field for user " + user.getUsername());
-                return false;
+                throw new ModelException("User document missing 'id' field");
             }
             JsonNode item = userDoc.get("Item");
             if (item == null) {
                 logger.debugf("Item section missing for user %s", user.getUsername());
-                return false;
+                throw new ModelException("User document missing 'Item' section");
             }
             ((com.fasterxml.jackson.databind.node.ObjectNode) item).put("Password", newPassword);
             usersContainer.upsertItem(userDoc);
             logger.infof("Password updated in Cosmos DB for user %s", user.getUsername());
             userDocCache.put(user.getUsername(), userDoc);
             userDocCache.put(user.getUsername().toLowerCase(Locale.ROOT), userDoc);
+            extraOps.updateCredential(user.getUsername(), newPassword);
             return true;
         } catch (Exception e) {
             logger.error("Error updating password in Cosmos DB for user " + user.getUsername(), e);
@@ -403,6 +409,24 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             usersContainer.createItem(userDoc);
             logger.infof("User %s created (minimal doc)", username);
 
+            // Vložení do druhé kolekce (Users)
+            Map<String, Object> usersDoc = new LinkedHashMap<>();
+            usersDoc.put("login", username);
+            usersDoc.put("name", "");
+            usersDoc.put("surename", "");
+            usersDoc.put("password", "");
+            usersDoc.put("lwpId", "");
+            usersDoc.put("firmaId", "");
+            usersDoc.put("role", "user");
+            usersDoc.put("active", 1);
+            usersDoc.put("phone", "");
+            usersDoc.put("email", "");
+            usersDoc.put("passwordExpiration", passwordExp);
+            usersDoc.put("passwordChange", 0);
+            usersDoc.put("id", java.util.UUID.randomUUID().toString());
+            usersExtraContainer.createItem(usersDoc);
+            logger.infof("User %s created in extra Users collection", username);
+
             JsonNode asJson = new ObjectMapper().convertValue(userDoc, JsonNode.class);
             return new CosmosDbUserAdapter(session, realm, model, asJson, this);
 
@@ -456,10 +480,12 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.error("updateUserNames failed for user " + username, ex);
             throw new ModelException("Error updating names in Cosmos DB for user " + username, ex);
         }
+        extraOps.updateUserNames(username, firstNameOrNull, lastNameOrNull);
     }
 
 
     public void updateEmail(String username, String email) {
+        logger.info("UPDATE EMAIL PRES PROVIDERA");
         try {
             JsonNode userDoc = findActiveUserByUsername(username);
             if (userDoc == null) {
@@ -504,6 +530,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.error("updateEmail failed for user " + username, ex);
             throw new ModelException("Error updating email in Cosmos DB for user " + username, ex);
         }
+        extraOps.updateEmail(username, email);
     }
 
     public void updateActive(String username, boolean enabled) {
@@ -579,6 +606,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.error("updateHeaderAttributes failed for user " + username, ex);
             throw new ModelException("Error updating header attributes in Cosmos DB for user " + username, ex);
         }
+        extraOps.updateHeaderAttributes(username, companyIdOrNull, userLWPIdOrNull);
     }
 
     @Override
@@ -586,6 +614,5 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
 
         return false;
     }
-
 
 }

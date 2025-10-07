@@ -16,6 +16,7 @@ public class CosmosDbUserStorageProviderFactory implements UserStorageProviderFa
     public static final String DATABASE_NAME = "databaseName";
     public static final String CONTAINER_NAME = "containerName";
     public static final String CLIENT_KEEP_ALIVE_SECONDS = "clientKeepAliveSeconds";
+    public static final String USERS_CONTAINER_NAME = "usersContainerName";
 
     @Override
     public CosmosDbUserStorageProvider create(KeycloakSession session, ComponentModel model) {
@@ -54,6 +55,13 @@ public class CosmosDbUserStorageProviderFactory implements UserStorageProviderFa
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .helpText("Název kontejneru s uživateli")
                 .defaultValue("User")
+                .add()
+                .property()
+                .name(USERS_CONTAINER_NAME)
+                .label("Users Container Name")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .helpText("Název druhé kolekce pro uživatele (např. Users)")
+                .defaultValue("Users")
                 .add()
                 .property()
                 .name(CLIENT_KEEP_ALIVE_SECONDS)

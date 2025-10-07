@@ -89,7 +89,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
             }
         } catch (Exception ex) {
             logger.debugf("Failed to persist email for user %s into Cosmos DB: %s", username, ex.getMessage());
-            throw new ModelException("Nepodařilo se uložit data do Cosmos DB. Uživatel nebyl vytvořen.");
+            throw new ModelException("Failed to persist email into Cosmos DB.");
         }
         // Keep federated attribute for UI consistency when editing
         if (email == null || email.isBlank()) {
