@@ -21,7 +21,6 @@ public class CosmosDbExtraUserOps {
     }
 
     public void updateEmail(String username, String email) {
-        logger.info("UPDATE EMAIL V EXTRA KOLEKCI PRES PROVIDERA");
         try {
             String q = "SELECT * FROM c WHERE c.login = @login";
             SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@login", username)));
@@ -45,7 +44,6 @@ public class CosmosDbExtraUserOps {
     }
 
     public void updateHeaderAttributes(String username, String companyIdOrNull, String userLWPIdOrNull) {
-        logger.info("UPDATE ATTRIBUTES V EXTRA KOLEKCI PRES PROVIDERA");
         if ((companyIdOrNull == null || companyIdOrNull.isBlank()) && (userLWPIdOrNull == null || userLWPIdOrNull.isBlank())) {
             return;
         }
@@ -64,7 +62,7 @@ public class CosmosDbExtraUserOps {
                         int lwpIdInt = Integer.parseInt(userLWPIdOrNull);
                         obj.put("lwpId", lwpIdInt);
                     } catch (NumberFormatException e) {
-                        logger.warnf("updateHeaderAttributesExtraCollection: lwpId '%s' není číslo, ignorováno.", userLWPIdOrNull);
+                        logger.warnf("updateHeaderAttributesExtraCollection: lwpId '%s' , .", userLWPIdOrNull);
                     }
                 }
                 usersExtraContainer.upsertItem(obj);
