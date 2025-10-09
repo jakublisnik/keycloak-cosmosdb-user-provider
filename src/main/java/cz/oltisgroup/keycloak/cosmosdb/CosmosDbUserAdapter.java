@@ -152,10 +152,10 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 logger.debugf("Failed to persist attribute %s for user %s: %s", name, username, ex.getMessage());
                 throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
             }
-        } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name) || "typeOfUser".equalsIgnoreCase(name)) {
+        } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name)) {
             try {
                 if (provider != null) {
-                    String cid = (name.equalsIgnoreCase("companyId") || name.equalsIgnoreCase("typeOfUser")) ? value : null;
+                    String cid = (name.equalsIgnoreCase("companyId") ) ? value : null;
                     String lid = name.equalsIgnoreCase("userLWPId") ? value : null;
                     provider.updateHeaderAttributes(username, cid, lid);
                 }

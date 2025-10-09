@@ -400,7 +400,6 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             header.put("TimeCreation", now);
             header.put("TimeSend", now);
 
-
             String passwordExp = java.time.OffsetDateTime.now().plusYears(1).toString();
             item.put("PasswordExpiration", passwordExp);
             item.put("PasswordChange", 0);
@@ -409,23 +408,8 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             usersContainer.createItem(userDoc);
             logger.infof("User %s created (minimal doc)", username);
 
-            // Vložení do druhé kolekce (Users)
-            Map<String, Object> usersDoc = new LinkedHashMap<>();
-            usersDoc.put("login", username);
-            usersDoc.put("name", "");
-            usersDoc.put("surename", "");
-            usersDoc.put("password", "");
-            usersDoc.put("lwpId", "");
-            usersDoc.put("firmaId", "");
-            usersDoc.put("role", "user");
-            usersDoc.put("active", 1);
-            usersDoc.put("phone", "");
-            usersDoc.put("email", "");
-            usersDoc.put("passwordExpiration", passwordExp);
-            usersDoc.put("passwordChange", 0);
-            usersDoc.put("id", java.util.UUID.randomUUID().toString());
-            usersExtraContainer.createItem(usersDoc);
-            logger.infof("User %s created in extra Users collection", username);
+            // Vložení do druhé kolekce pomocí extraOps
+           // extraOps.createUserInExtraCollection(username, passwordExp);
 
             JsonNode asJson = new ObjectMapper().convertValue(userDoc, JsonNode.class);
             return new CosmosDbUserAdapter(session, realm, model, asJson, this);
@@ -480,7 +464,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.error("updateUserNames failed for user " + username, ex);
             throw new ModelException("Error updating names in Cosmos DB for user " + username, ex);
         }
-        extraOps.updateUserNames(username, firstNameOrNull, lastNameOrNull);
+       // extraOps.updateUserNames(username, firstNameOrNull, lastNameOrNull);
     }
 
 
@@ -530,7 +514,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.error("updateEmail failed for user " + username, ex);
             throw new ModelException("Error updating email in Cosmos DB for user " + username, ex);
         }
-        extraOps.updateEmail(username, email);
+       // extraOps.updateEmail(username, email);
     }
 
     public void updateActive(String username, boolean enabled) {
@@ -566,6 +550,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
 
     // Update Header attributes like CompanyId and UserLWPId
     public void updateHeaderAttributes(String username, String companyIdOrNull, String userLWPIdOrNull) {
+        logger.info("COMPANY ID FIRMA ZACATEK: " + companyIdOrNull);
         if ((companyIdOrNull == null || companyIdOrNull.isBlank()) && (userLWPIdOrNull == null || userLWPIdOrNull.isBlank())) {
             return;
         }
@@ -606,7 +591,24 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             logger.error("updateHeaderAttributes failed for user " + username, ex);
             throw new ModelException("Error updating header attributes in Cosmos DB for user " + username, ex);
         }
-        extraOps.updateHeaderAttributes(username, companyIdOrNull, userLWPIdOrNull);
+
+        // Kontrola atributu saveToSeccondCollection a volání metod z extraOps
+        UserModel user = session.users().getUserByUsername(session.getContext().getRealm(), username);
+        if (user != null) {
+            String saveToSeccondCollection = user.getFirstAttribute("saveToSeccondCollection");
+            if ("yes".equalsIgnoreCase(saveToSeccondCollection)) {
+                logger.infof("saveToSeccondCollection is 'yes' for user %s, calling extraOps methods.", username);
+                extraOps.createUserInExtraCollection(username);
+                String companyId = user.getFirstAttribute("CompanyId");
+                extraOps.updateHeaderAttributes(username, companyId, userLWPIdOrNull);
+                extraOps.updateEmail(username, user.getEmail());
+                extraOps.updateUserNames(username, user.getFirstName(), user.getLastName());
+            } else {
+                logger.infof("saveToSeccondCollection is not 'yes' for user %s, skipping extraOps methods.", username);
+            }
+        } else {
+            logger.warnf("UserModel not found for username %s, skipping extraOps methods.", username);
+        }
     }
 
     @Override

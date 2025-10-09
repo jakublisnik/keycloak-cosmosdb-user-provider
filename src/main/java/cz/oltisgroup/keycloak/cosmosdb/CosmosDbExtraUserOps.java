@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.jboss.logging.Logger;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class CosmosDbExtraUserOps {
 
@@ -126,5 +128,30 @@ public class CosmosDbExtraUserOps {
             throw new RuntimeException("Error updating password in extra Users collection for user " + username, e);
         }
     }
-}
 
+    public void createUserInExtraCollection(String username) {
+        logger.infof("Creating user %s in extra Users collection", username);
+        String passwordExp = java.time.OffsetDateTime.now().plusYears(1).toString();
+        try {
+            Map<String, Object> usersDoc = new LinkedHashMap<>();
+            usersDoc.put("login", username);
+            usersDoc.put("name", "");
+            usersDoc.put("surename", "");
+            usersDoc.put("password", "");
+            usersDoc.put("lwpId", "");
+            usersDoc.put("firmaId", "");
+            usersDoc.put("role", "user");
+            usersDoc.put("active", 1);
+            usersDoc.put("phone", "");
+            usersDoc.put("email", "");
+            usersDoc.put("passwordExpiration", passwordExp);
+            usersDoc.put("passwordChange", 0);
+            usersDoc.put("id", java.util.UUID.randomUUID().toString());
+            usersExtraContainer.createItem(usersDoc);
+            logger.infof("User %s successfully created in extra Users collection", username);
+        } catch (Exception ex) {
+            logger.errorf("Failed to create user %s in extra Users collection", username, ex);
+            throw new RuntimeException("Error creating user in extra Users collection for user " + username, ex);
+        }
+    }
+}
