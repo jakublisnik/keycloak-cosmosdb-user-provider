@@ -152,4 +152,23 @@ public class CosmosDbExtraUserOps {
             throw new RuntimeException("Error creating user in extra Users collection for user " + username, ex);
         }
     }
+
+    public boolean existsInExtraCollection(String username) {
+        try {
+            String q = "SELECT * FROM c WHERE c.login = @login";
+            SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@login", username)));
+            CosmosPagedIterable<JsonNode> res = usersExtraContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+            for (JsonNode doc : res) {
+                if (doc.isObject()) {
+                    logger.debugf("existsInExtraCollection: user %s exists", username);
+                    return true;
+                }
+            }
+            logger.debugf("existsInExtraCollection: user %s does not exist", username);
+            return false;
+        } catch (Exception ex) {
+            logger.error("existsInExtraCollection failed for user " + username, ex);
+            throw new RuntimeException("Error checking existence in extra Users collection for user " + username, ex);
+        }
+    }
 }

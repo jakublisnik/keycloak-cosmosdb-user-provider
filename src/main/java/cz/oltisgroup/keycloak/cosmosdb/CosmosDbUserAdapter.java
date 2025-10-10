@@ -212,7 +212,28 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
                 logger.debugf("Failed to persist email via setAttribute for user %s: %s", username, ex.getMessage());
                 throw new ModelException("Failed to persist email into Cosmos DB.");
             }
+        } else if ("saveToSeccondCollection".equalsIgnoreCase(name) && values != null) {
+            String v = values.isEmpty() ? null : values.get(0);
+            try {
+                if (provider != null && "yes".equalsIgnoreCase(v)) {
+                    boolean existsInExtra = provider.getExtraOps().existsInExtraCollection(username);
+                    if (!existsInExtra) {
+                        logger.infof("saveToSeccondCollection set to 'yes' for user %s, creating in extra collection.", username);
+                        provider.getExtraOps().createUserInExtraCollection(username);
+                        provider.getExtraOps().updateHeaderAttributes(username, getFirstAttribute("CompanyId"), getFirstAttribute("userLWPId"));
+                        provider.getExtraOps().updateEmail(username, getEmail());
+                        provider.getExtraOps().updateUserNames(username, getFirstName(), getLastName());
+                    } else {
+                        logger.infof("User %s already exists in extra collection, skipping creation.", username);
+                    }
+                }
+            } catch (Exception ex) {
+                logger.debugf("Failed to handle saveToSeccondCollection for user %s: %s", username, ex.getMessage());
+                throw new ModelException("Failed to handle saveToSeccondCollection for user " + username);
+            }
         }
+
+
         super.setAttribute(name, values);
     }
 
