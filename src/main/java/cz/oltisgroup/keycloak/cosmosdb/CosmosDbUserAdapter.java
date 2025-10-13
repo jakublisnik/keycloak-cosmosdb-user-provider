@@ -141,101 +141,96 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
     // Intercept UserProfile attribute updates as well
     @Override
     public void setSingleAttribute(String name, String value) {
-        if ("firstName".equals(name) || "lastName".equals(name)) {
-            try {
-                if (provider != null) {
-                    String fn = "firstName".equals(name) ? value : null;
-                    String ln = "lastName".equals(name) ? value : null;
-                    provider.updateUserNames(username, fn, ln);
-                }
-            } catch (Exception ex) {
-                logger.debugf("Failed to persist attribute %s for user %s: %s", name, username, ex.getMessage());
-                throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
+        String normalized = name == null ? "" : name.trim().toLowerCase();
+
+        try {
+            switch (normalized) {
+                case "firstname":
+                case "lastname":
+                    if (provider != null) {
+                        String fn = "firstname".equals(normalized) ? value : null;
+                        String ln = "lastname".equals(normalized) ? value : null;
+                        provider.updateUserNames(username, fn, ln);
+                    }
+                    break;
+                case "companyid":
+                case "userlwpid":
+                    if (provider != null) {
+                        String cid = "companyid".equals(normalized) ? value : null;
+                        String lid = "userlwpid".equals(normalized) ? value : null;
+                        provider.updateHeaderAttributes(username, cid, lid);
+                    }
+                    break;
+                case "email":
+                    if (provider != null) {
+                        provider.updateEmail(username, value);
+                    }
+                    break;
+                default:
+                    // No special handling
             }
-        } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name)) {
-            try {
-                if (provider != null) {
-                    String cid = (name.equalsIgnoreCase("companyId") ) ? value : null;
-                    String lid = name.equalsIgnoreCase("userLWPId") ? value : null;
-                    provider.updateHeaderAttributes(username, cid, lid);
-                }
-            } catch (Exception ex) {
-                logger.debugf("Failed to persist header attribute %s for user %s: %s", name, username, ex.getMessage());
-                throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
-            }
-        } else if ("email".equalsIgnoreCase(name)) {
-            try {
-                if (provider != null) {
-                    provider.updateEmail(username, value);
-                }
-            } catch (Exception ex) {
-                logger.debugf("Failed to persist email via setSingleAttribute for user %s: %s", username, ex.getMessage());
-                throw new ModelException("Failed to persist email into Cosmos DB.");
-            }
+        } catch (Exception ex) {
+            logger.debugf("Failed to persist attribute %s for user %s: %s", name, username, ex.getMessage());
+            throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
         }
+
         super.setSingleAttribute(name, value);
     }
 
+
     @Override
     public void setAttribute(String name, List<String> values) {
-        if (("firstName".equals(name) || "lastName".equals(name)) && values != null) {
-            String v = values.isEmpty() ? null : values.get(0);
-            try {
-                if (provider != null) {
-                    String fn = "firstName".equals(name) ? v : null;
-                    String ln = "lastName".equals(name) ? v : null;
-                    provider.updateUserNames(username, fn, ln);
-                }
-            } catch (Exception ex) {
-                logger.debugf("Failed to persist attribute(list) %s for user %s: %s", name, username, ex.getMessage());
-                throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
-            }
-        } else if ("companyId".equalsIgnoreCase(name) || "userLWPId".equalsIgnoreCase(name)  && values != null) {
-            String v = values.isEmpty() ? null : values.get(0);
-            try {
-                if (provider != null) {
-                    String cid = name.equalsIgnoreCase("companyId")  ? v : null;
-                    String lid = name.equalsIgnoreCase("userLWPId") ? v : null;
-                    provider.updateHeaderAttributes(username, cid, lid);
-                }
-            } catch (Exception ex) {
-                logger.debugf("Failed to persist header attribute(list) %s for user %s: %s", name, username, ex.getMessage());
-                throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
-            }
-        } else if ("email".equalsIgnoreCase(name) && values != null) {
-            String v = values.isEmpty() ? null : values.get(0);
-            try {
-                if (provider != null) {
-                    provider.updateEmail(username, v);
-                }
-            } catch (Exception ex) {
-                logger.debugf("Failed to persist email via setAttribute for user %s: %s", username, ex.getMessage());
-                throw new ModelException("Failed to persist email into Cosmos DB.");
-            }
-        } else if ("saveToSeccondCollection".equalsIgnoreCase(name) && values != null) {
-            String v = values.isEmpty() ? null : values.get(0);
-            try {
-                if (provider != null && "yes".equalsIgnoreCase(v)) {
-                    boolean existsInExtra = provider.getExtraOps().existsInExtraCollection(username);
-                    if (!existsInExtra) {
-                        logger.infof("saveToSeccondCollection set to 'yes' for user %s, creating in extra collection.", username);
-                        provider.getExtraOps().createUserInExtraCollection(username);
-                        provider.getExtraOps().updateHeaderAttributes(username, getFirstAttribute("CompanyId"), getFirstAttribute("userLWPId"));
-                        provider.getExtraOps().updateEmail(username, getEmail());
-                        provider.getExtraOps().updateUserNames(username, getFirstName(), getLastName());
-                    } else {
-                        logger.infof("User %s already exists in extra collection, skipping creation.", username);
-                    }
-                }
-            } catch (Exception ex) {
-                logger.debugf("Failed to handle saveToSeccondCollection for user %s: %s", username, ex.getMessage());
-                throw new ModelException("Failed to handle saveToSeccondCollection for user " + username);
-            }
-        }
+        String normalized = name == null ? "" : name.trim().toLowerCase();
+        String value = (values == null || values.isEmpty()) ? null : values.get(0);
 
+        try {
+            switch (normalized) {
+                case "firstname":
+                case "lastname":
+                    if (provider != null) {
+                        String fn = "firstname".equals(normalized) ? value : null;
+                        String ln = "lastname".equals(normalized) ? value : null;
+                        provider.updateUserNames(username, fn, ln);
+                    }
+                    break;
+                case "companyid":
+                case "userlwpid":
+                    if (provider != null) {
+                        String cid = "companyid".equals(normalized) ? value : null;
+                        String lid = "userlwpid".equals(normalized) ? value : null;
+                        provider.updateHeaderAttributes(username, cid, lid);
+                    }
+                    break;
+                case "email":
+                    if (provider != null) {
+                        provider.updateEmail(username, value);
+                    }
+                    break;
+                case "savetoseccondcollection":
+                    if (provider != null && "yes".equalsIgnoreCase(value)) {
+                        var extraOps = provider.getExtraOps();
+                        if (!extraOps.existsInExtraCollection(username)) {
+                            logger.infof("saveToSeccondCollection set to 'yes' for user %s, creating in extra collection.", username);
+                            extraOps.createUserInExtraCollection(username);
+                            extraOps.updateHeaderAttributes(username, getFirstAttribute("CompanyId"), getFirstAttribute("userLWPId"));
+                            extraOps.updateEmail(username, getEmail());
+                            extraOps.updateUserNames(username, getFirstName(), getLastName());
+                        } else {
+                            logger.infof("User %s already exists in extra collection, skipping creation.", username);
+                        }
+                    }
+                    break;
+                default:
+                    // No special handling, just pass to super
+            }
+        } catch (Exception ex) {
+            logger.debugf("Failed to persist attribute %s for user %s: %s", name, username, ex.getMessage());
+            throw new ModelException("Failed to persist " + name + " into Cosmos DB.");
+        }
 
         super.setAttribute(name, values);
     }
+
 
     @Override
     public String getLastName() {
