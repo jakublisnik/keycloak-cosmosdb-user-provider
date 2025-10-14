@@ -242,7 +242,6 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
                     break;
                 }
             }
-            logger.info("SEARCH paramko: " + search);
             // Only add WHERE if search is not "*" and not empty
             if (search != null && !search.isEmpty() && !search.equals("*")) {
                 queryBuilder.append(" WHERE (CONTAINS(LOWER(c.Header.UserAdId), @search) OR CONTAINS(LOWER(c.Item.Email), @search) OR CONTAINS(LOWER(c.Item.email), @search))");
