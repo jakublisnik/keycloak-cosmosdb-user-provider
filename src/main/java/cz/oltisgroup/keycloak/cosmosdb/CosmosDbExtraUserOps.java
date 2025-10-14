@@ -171,4 +171,24 @@ public class CosmosDbExtraUserOps {
             throw new RuntimeException("Error checking existence in extra Users collection for user " + username, ex);
         }
     }
+
+    public void removeUser(String username) {
+        try {
+            String q = "SELECT * FROM c WHERE c.login = @login";
+            SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@login", username)));
+            CosmosPagedIterable<JsonNode> res = usersExtraContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+            for (JsonNode doc : res) {
+                if (doc.isObject() && doc.has("id")) {
+                    String id = doc.get("id").asText();
+                    usersExtraContainer.deleteItem(id, new PartitionKey(username), new CosmosItemRequestOptions());
+                    logger.infof("removeUserExtraCollection: user %s deleted from extra collection", username);
+                    break;
+                }
+            }
+        } catch (Exception ex) {
+            logger.error("removeUserExtraCollection failed for user " + username, ex);
+            throw new RuntimeException("Error removing user from extra Users collection for user " + username, ex);
+        }
+    }
+
 }

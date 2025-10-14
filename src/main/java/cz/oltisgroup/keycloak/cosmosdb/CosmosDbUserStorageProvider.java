@@ -596,9 +596,37 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
 
     @Override
     public boolean removeUser(RealmModel realm, UserModel user) {
+        String username = user.getUsername();
+        try {
+            // Find user document in main collection
+            JsonNode userDoc = findActiveUserByUsername(username);
+            if (userDoc == null || !userDoc.has("id")) {
+                // Try to load full doc by username if not found
+                String q = "SELECT * FROM c WHERE LOWER(c.Header.UserAdId) = @uname";
+                SqlQuerySpec spec = new SqlQuerySpec(q, Collections.singletonList(new SqlParameter("@uname", username.toLowerCase(Locale.ROOT))));
+                CosmosPagedIterable<JsonNode> res = usersContainer.queryItems(spec, new CosmosQueryRequestOptions(), JsonNode.class);
+                for (JsonNode full : res) { userDoc = full; break; }
+            }
+            if (userDoc != null && userDoc.has("id")) {
+                String id = userDoc.get("id").asText();
+                String partitionKeyValue = userDoc.get("Header").get("UserAdId").asText();
+                usersContainer.deleteItem(id, new PartitionKey(partitionKeyValue), new CosmosItemRequestOptions());
+                userDocCache.remove(username);
+                userDocCache.remove(username.toLowerCase(Locale.ROOT));
+            }
 
-        return false;
+            // Remove from extra collection
+            extraOps.removeUser(username);
+
+
+            logger.infof("User %s deleted from both Cosmos DB collections and Keycloak", username);
+            return true;
+        } catch (Exception ex) {
+            logger.error("Failed to remove user " + username, ex);
+            return false;
+        }
     }
+
 
     public CosmosDbExtraUserOps getExtraOps() {
         return extraOps;
