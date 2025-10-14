@@ -216,7 +216,7 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
     @Override
     public int getUsersCount(RealmModel realm) {
         try {
-            String query = "SELECT VALUE COUNT(1) FROM c WHERE c.Item.Active = 1";
+            String query = "SELECT VALUE COUNT(1) FROM c";
             CosmosPagedIterable<Integer> results = usersContainer.queryItems(query, new CosmosQueryRequestOptions(), Integer.class);
             for (Integer count : results) {
                 return count;
@@ -230,13 +230,22 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
 
     @Override
     public Stream<UserModel> searchForUserStream(RealmModel realm, Map<String, String> params, Integer firstResult, Integer maxResults) {
+        logger.info("SEARCH FOR USER STREAM CALLED, PARAMS: " + params);
         List<UserModel> users = new ArrayList<>();
         try {
-            StringBuilder queryBuilder = new StringBuilder("SELECT c.Header, c.Item FROM c WHERE c.Item.Active = 1");
+            StringBuilder queryBuilder = new StringBuilder("SELECT c.Header, c.Item FROM c");
             List<SqlParameter> parameters = new ArrayList<>();
-            String search = params.get("search");
-            if (search != null && !search.isEmpty()) {
-                queryBuilder.append(" AND (CONTAINS(LOWER(c.Header.UserAdId), @search) OR CONTAINS(LOWER(c.Item.Email), @search) OR CONTAINS(LOWER(c.Item.email), @search))");
+            String search = null;
+            for (Map.Entry<String, String> entry : params.entrySet()) {
+                if (entry.getKey().toLowerCase().contains("search")) {
+                    search = entry.getValue();
+                    break;
+                }
+            }
+            logger.info("SEARCH paramko: " + search);
+            // Only add WHERE if search is not "*" and not empty
+            if (search != null && !search.isEmpty() && !search.equals("*")) {
+                queryBuilder.append(" WHERE (CONTAINS(LOWER(c.Header.UserAdId), @search) OR CONTAINS(LOWER(c.Item.Email), @search) OR CONTAINS(LOWER(c.Item.email), @search))");
                 parameters.add(new SqlParameter("@search", search.toLowerCase()));
             }
             if (firstResult != null && maxResults != null) {
@@ -247,11 +256,9 @@ public class CosmosDbUserStorageProvider implements UserStorageProvider,
             SqlQuerySpec querySpec = new SqlQuerySpec(queryBuilder.toString(), parameters);
             CosmosPagedIterable<JsonNode> results = usersContainer.queryItems(querySpec, new CosmosQueryRequestOptions(), JsonNode.class);
             for (JsonNode userDoc : results) {
-                if (isUserActive(userDoc)) {
-                    String username = userDoc.has("Header") && userDoc.get("Header").has("UserAdId") ? userDoc.get("Header").get("UserAdId").asText() : null;
-                    cacheAndReturn(username, userDoc);
-                    users.add(new CosmosDbUserAdapter(session, realm, model, userDoc, this));
-                }
+                String username = userDoc.has("Header") && userDoc.get("Header").has("UserAdId") ? userDoc.get("Header").get("UserAdId").asText() : null;
+                cacheAndReturn(username, userDoc);
+                users.add(new CosmosDbUserAdapter(session, realm, model, userDoc, this));
             }
         } catch (Exception e) {
             logger.error("Error searching users", e);
