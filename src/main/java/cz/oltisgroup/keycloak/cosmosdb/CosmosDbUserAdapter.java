@@ -11,6 +11,7 @@ import org.keycloak.models.SubjectCredentialManager;
 import org.keycloak.storage.StorageId;
 import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
 
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -61,6 +62,7 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
         }
         return null;
     }
+
 
     @Override
     public String getUsername() { return username; }
@@ -182,7 +184,6 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
     public void setAttribute(String name, List<String> values) {
         String normalized = name == null ? "" : name.trim().toLowerCase();
         String value = (values == null || values.isEmpty()) ? null : values.get(0);
-
         try {
             switch (normalized) {
                 case "firstname":
@@ -342,10 +343,31 @@ public class CosmosDbUserAdapter extends AbstractUserAdapterFederatedStorage {
         return new UserCredentialManager(session, realm, this);
     }
 
+    private Long createdTimestamp = null;
+
     @Override
-    public Long getCreatedTimestamp() { return null; }
+    public Long getCreatedTimestamp() {
+        if (createdTimestamp != null) return createdTimestamp;
+
+       try {
+            // Prefer Header.TimeCreation (ISO OffsetDateTime string)
+            if (headerDoc != null && headerDoc.has("TimeCreation") && !headerDoc.get("TimeCreation").isNull()) {
+                String ts = headerDoc.get("TimeCreation").asText(null);
+                if (ts != null && !ts.isBlank()) {
+                    createdTimestamp = OffsetDateTime.parse(ts).toInstant().toEpochMilli();
+                    return createdTimestamp;
+                }
+            }
+        } catch (Exception e) {
+            logger.debugf("Could not parse created timestamp: %s", e.getMessage());
+        }
+
+        return null;
+    }
     @Override
-    public void setCreatedTimestamp(Long timestamp) { /* read-only */ }
+    public void setCreatedTimestamp(Long timestamp) {
+        this.createdTimestamp = timestamp;
+    }
 
     public String getCompanyId() {
         if (headerDoc != null && headerDoc.has("CompanyId")) {
